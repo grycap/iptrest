@@ -1,0 +1,50 @@
+#!/usr/bin/env python
+# coding: utf-8
+import autorest.autorest as autorest
+import bottle
+
+IPTREST_APP='/opt/iptrest/iptrest'
+
+functions = {
+    'redir': {
+        'route': '',
+        'callback': {
+            'type': 'application',
+            'command': [ IPTREST_APP, 'list', '-j' ]
+        }
+    },
+    'redir_put': {
+        'route': '',
+        'method': 'PUT',
+        'parameters': [ 's_port', 'ip', 'port' ],
+        'callback': {
+            'type': 'application',
+            'command': [ IPTREST_APP, 'add', '-s', '<s_port>', '-i', '<ip>', '-d', '<port>', '-pj' ]
+        }
+    },
+    'redir_del_port': {
+        'route': '',
+        'method': 'DELETE',
+        'parameters': [ 'port' ],
+        'callback': {
+            'type': 'application',
+            'command': [ IPTREST_APP, 'del', '-s', '<port>', '-pj' ]
+        }
+    },
+    'redir_del_ip': {
+        'route': '',
+        'method': 'DELETE',
+        'parameters': [ 'ip', 'port' ],
+        'callback': {
+            'type': 'application',
+            'command': [ IPTREST_APP, 'del', '-s', '<port>', '-i', '<ip>', '-pj' ]
+        }
+    },
+    '#config': {
+        
+    }
+}
+
+if __name__ == '__main__':
+    autorest.setup_routing(functions)
+    bottle.run(host='localhost', port=8080)

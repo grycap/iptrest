@@ -1,0 +1,294 @@
+#!/bin/bash
+source debug.bashc
+source parameters.bashc
+source utils.bashc
+
+function make_chain() {
+  if ! sudo iptables -t nat -L PORTREDIRECT 2> /dev/null > /dev/null; then
+    if ! sudo iptables -t nat -N PORTREDIRECT 2> /dev/null > /dev/null; then
+      bashc.finalize 1 "could not create chain"
+    fi
+  fi
+  # iptables -A POSTROUTING -j MASQUERADE
+}
+
+function show_rule() {
+  local JSON_OUTPUT=false
+  if [ "$1" == "-j" ]; then
+    JSON_OUTPUT=true
+    shift
+  fi
+
+  local S_PORT="$1"
+  local D_IP="$2"
+  local D_PORT="$3"
+
+  if [ "$JSON_OUTPUT" == "true" ]; then
+    p_out "$(cat << EOT
+{"s_port" : "$S_PORT", "ip": "$D_IP", "d_port" : "$D_PORT" }
+EOT
+)"
+  else
+    p_out "$S_PORT=>$D_IP:$D_PORT"
+  fi
+}
+
+function p_dump_rules() {
+  local JSON_OUTPUT
+  if [ "$1" == "-j" ]; then
+    shift
+    JSON_OUTPUT=true
+  fi
+  
+  local RESULT="$1"
+
+  if [ "$JSON_OUTPUT" == "true" ]; then
+    p_out "$(cat << EOT
+$(
+CUR=[
+SEP=
+while read L; do
+  if [ "$L" != "" ]; then
+  echo -n "${CUR}${SEP}"
+  IFS=';' read S_PORT D_IP D_PORT <<< "$L"
+  CUR="$(show_rule -j "$S_PORT" "$D_IP" "$D_PORT")"
+  SEP=", "
+  fi
+done <<< "$RESULT"
+echo "${CUR}]"
+)
+EOT
+)"
+  else
+    p_out "$(cat << EOT
+$(
+CUR=
+SEP=
+while read L; do
+  if [ "$L" != "" ]; then
+  echo -n "${CUR}${SEP}"
+  IFS=';' read S_PORT D_IP D_PORT <<< "$L"
+  CUR="$(show_rule "$S_PORT" "$D_IP" "$D_PORT")"
+  SEP="
+"
+  fi
+done <<< "$RESULT"
+echo "${CUR}"
+)
+EOT
+)"
+  fi
+}
+
+function _getrules() {
+  local RULES="$(sudo iptables -t nat -L PORTREDIRECT -n | tail -n +3)"
+  while read L; do
+    [ "$L" == "" ] && continue
+    read F1 F2 F3 F4 F5 F6 <<< "$L"
+    if [ "$F1 $F2 $F3 $F4 $F5" != "DNAT tcp -- 0.0.0.0/0 0.0.0.0/0" ]; then
+      p_error "unexpected iptable entry: $L"
+    else
+      read F1 F2 F3 <<< "$F6"
+      IFS=':' read F1 S_PORT <<< "$F2"
+      IFS=':' read F1 D_IP D_PORT <<< "$F3"
+      if [ "$S_PORT" == "" -o "$D_IP" == "" -o "$D_PORT" == "" ]; then
+        p_error "unexpected iptable entry: $L"
+      else
+        echo "${S_PORT};${D_IP};${D_PORT}"
+      fi
+    fi
+  done <<< "$RULES"  
+}
+
+function _queryrules() {
+  if [ "$S_PORT" != "" ] && ! bashc.is_unsigned "$S_PORT"; then
+    bashc.finalize 1 "missing source port"
+  fi
+
+  if [ "$D_PORT" != "" ] && ! bashc.is_unsigned "$D_PORT"; then
+    bashc.finalize 1 "$D_PORT is not a valid port"
+  fi
+
+  if [ "$D_IP" != "" ] && ! bashc.is_ip "$D_IP"; then
+    bashc.finalize 1 "$D_IP is not a valid IP address"
+  fi
+
+  local RULES="$(_getrules | sort -n -t'=')"
+  if [ "$S_PORT" == "" ]; then
+    S_PORT='[0-9]\{1,5\}'
+  fi
+
+  if [ "$D_IP" == "" ]; then
+    D_IP='[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}'
+  fi
+
+  if [ "$D_PORT" == "" ]; then
+    D_PORT='[0-9]\{1,5\}'
+  fi
+
+  local RESULT="$(echo "$RULES" | grep "^${S_PORT};${D_IP};${D_PORT}\$")"
+  echo "$RESULT"
+}
+
+function del() {
+  if [ "$D_IP" == "0.0.0.0" ]; then
+    D_IP=
+  fi
+  if [ "$D_PORT" == "0" ]; then
+    D_PORT=
+  fi
+  if [ "$S_PORT" == "0" ]; then
+    S_PORT=
+  fi
+
+  local RULES="$(_queryrules)"
+
+  p_debug "existing rules:
+$RULES"
+
+  local S_PORT D_PORT D_IP R
+  local RESULT
+  while read L; do
+    [ "$L" == "" ] && continue
+
+    IFS=';' read S_PORT D_IP D_PORT <<< "$L"
+
+    if [ "$S_PORT" != "" -a "$D_PORT" != "" -a "$D_IP" != "" ]; then
+      if [ "$NOOP" == "true" ]; then
+        p_out "iptables -t nat -D PORTREDIRECT -p tcp -m tcp --dport $S_PORT -j DNAT --to-destination $D_IP:$D_PORT"
+      else
+        p_debug "deleting rule $S_PORT=>$D_IP:$D_PORT"
+        if ! sudo iptables -t nat -D PORTREDIRECT -p tcp -m tcp --dport $S_PORT -j DNAT --to-destination $D_IP:$D_PORT; then
+          bashc.finalize 1 "could not delete rule $(show_rule "$S_PORT" "$D_IP" "$D_PORT")"
+        fi
+      fi
+    else
+      p_warning "ignoring malformed rule $L"
+    fi
+  done <<< "$RULES"
+
+  if [ "$SHOWRESULT" == "true" ]; then
+    if [ "$JSON_OUTPUT" == "true" ]; then
+      p_dump_rules -j "$RULES"
+    else
+      p_dump_rules "$RULES"
+    fi
+  fi
+}
+
+function add() {
+  if [ "$S_PORT" == "0" ]; then
+    S_PORT=
+  fi
+
+  if [ "$D_IP" == "" ]; then
+    bashc.finalize 1 "missing destination ip address"
+  fi
+
+  if [ "$D_PORT" == "" ]; then
+    bashc.finalize 1 "missing destination port"
+  fi
+
+  local RULES="$(_getrules | sort -n -t';')"
+  p_debug "existing rules:
+$RULES"
+  if [ "$S_PORT" == "" ]; then
+    local CURRENT=$BASE
+    local PORT REST L
+    while read L; do
+      if [ "$L" != "" ]; then
+        read -d ';' PORT REST <<< "$L"
+        if [ $CURRENT -ne $PORT ]; then
+          break
+        else
+          p_debug "existing rule for port $PORT"
+          CURRENT=$((PORT+1))
+        fi
+      fi
+    done <<< "$RULES"
+    S_PORT=$CURRENT
+  fi
+
+  local EXISTINGRULE="$(echo "$RULES" | grep "^${S_PORT};")"
+  if [ "$EXISTINGRULE" != "" ]; then
+    bashc.finalize 1 "port $S_PORT already redirected ($EXISTINGRULE)"
+  fi
+
+  if [ "$NOOP" == "true" ]; then
+    p_out "iptables -t nat -A PORTREDIRECT -p tcp -m tcp --dport $S_PORT -j DNAT --to-destination $D_IP:$D_PORT"
+  else
+    p_debug "creating rule $(show_rule "$S_PORT" "$D_IP" "$D_PORT")"
+    if ! sudo iptables -t nat -A PORTREDIRECT -p tcp -m tcp --dport $S_PORT -j DNAT --to-destination $D_IP:$D_PORT; then
+      bashc.finalize 1 "could not create rule $(show_rule "$S_PORT" "$D_IP" "$D_PORT")"
+    fi
+  fi
+
+  if [ "$SHOWRESULT" == "true" ]; then
+    if [ "$JSON_OUTPUT" == "true" ]; then
+      p_dump_rules -j "${S_PORT};${D_IP};${D_PORT}"
+    else
+      p_dump_rules "${S_PORT};${D_IP};${D_PORT}"
+    fi
+  fi
+  return 0;
+}
+
+function listrules() {
+  local RESULT="$(_queryrules)"
+
+  if [ "$JSON_OUTPUT" == "true" ]; then
+    p_dump_rules -j "$RESULT"
+  else
+    p_dump_rules "$RESULT"
+  fi
+
+  if [ "$RESULT" != "" ]; then
+    return 1
+  fi
+  return 0
+}
+
+make_chain
+
+OPERATION=
+BASE=1024
+bashc.parameter_parse_commandline "$@"
+bashc.parameters_start
+while bashc.parameters_next; do
+  PARAM="$(bashc.parameters_current)"
+  case "$PARAM" in
+    --debug)
+        DEBUG=true;;
+    --json|-j)
+        JSON_OUTPUT=true;;
+    --print|-p)
+        SHOWRESULT=true;;
+    --base|-b)
+        bashc.parameters_next
+        PARAM="$(bashc.parameters_current)"
+        BASE="$PARAM";;
+    --source-port|-s)
+        bashc.parameters_next
+        S_PORT="$(bashc.parameters_current)";;
+    --dest-port|-d)
+        bashc.parameters_next
+        D_PORT="$(bashc.parameters_current)";;
+    --dest-ip|-i)
+        bashc.parameters_next
+        D_IP="$(bashc.parameters_current)";;
+    --no-ip|-n)
+        NOOP=true;;
+    *)  [ "$OPERATION" == "" ] && OPERATION="$PARAM" && continue
+        bashc.finalize 1 "invalid parameter $PARAM";;
+  esac
+done
+
+case "$OPERATION" in
+  add) 
+    add;;
+  list) 
+    listrules;;
+  del) 
+    del;;
+  *)  bashc.finalize 1 "invalid operation";;
+esac
