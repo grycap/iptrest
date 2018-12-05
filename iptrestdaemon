@@ -37,7 +37,7 @@ functions = {
         'parameters': [ 'ip', 'port' ],
         'callback': {
             'type': 'application',
-            'command': [ IPTREST_APP, 'del', '-s', '<port>', '-i', '<ip>', '-pj' ]
+            'command': [ IPTREST_APP, 'del', '-d', '<port>', '-i', '<ip>', '-pj' ]
         }
     },
     '#config': {

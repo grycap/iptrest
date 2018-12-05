@@ -1,0 +1,14 @@
+PACKAGE=iptrest
+VERSION=0.1-alpha1
+SUMMARY="iptables utility to manage port redirection"
+LICENSE="Apache 2.0"
+URL="https://github.com/grycap/iptrest"
+DESCRIPTION="Dealing with iptables may be difficult. This is a very straighforward utility to manage simple port redirection from one DMZ host to an internal network"
+PACKAGER="Carlos de Alfonso <calfonso@upv.es>"
+# DEPENDS is for DEB packages
+DEPENDS="bash, python, python-bottle, iptables, coreutils, sed"
+# REQUIRES if for RPM packages
+REQUIRES="bash coreutils iptables sed python"
+
+/usr/bin;iptrest:iptrestd:iptrestdaemon
+/lib/systemd/system;iptrestd.service

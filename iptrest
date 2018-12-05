@@ -145,7 +145,13 @@ function make_chain() {
       bashc.finalize 1 "could not create chain"
     fi
   fi
-  # iptables -A POSTROUTING -j MASQUERADE
+  local RES="$(iptables -t nat -S 2> /dev/null | grep -- '-A POSTROUTING -j MASQUERADE')"
+  if [ "$RES" == "" ]; then
+    if ! iptables -t nat -A POSTROUTING -j MASQUERADE 2> /dev/null > /dev/null; then
+      bashc.finalize 1 "could not set up masquerading"
+    fi
+  fi
+  echo "1" > /proc/sys/net/ipv4/ip_forward
 }
 
 function show_rule() {
