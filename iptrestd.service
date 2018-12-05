@@ -1,0 +1,14 @@
+[Unit]
+Description=REST service for iptrest
+After=network.target
+ConditionPathExists=/usr/bin/iptrest
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/iptrestd start
+ExecStop=/usr/bin/iptrestd stop
+ExecReload=/usr/bin/iptrestd restart
+PIDFile=/var/run/iptrest.pid
+
+[Install]
+WantedBy=multi-user.target
