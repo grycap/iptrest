@@ -11,7 +11,12 @@ functions = {
         'callback': {
             'type': 'application',
             'command': [ IPTREST_APP, 'list', '-j' ]
-        }
+        },
+        'errorcodes': {
+            'error': [
+                { "callback": 1, "html": 200 }
+            ]
+        }        
     },
     'redir_put': {
         'route': '',

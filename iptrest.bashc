@@ -15,6 +15,12 @@ function make_chain() {
       bashc.finalize 1 "could not set up masquerading"
     fi
   fi
+  RES="$(iptables -t nat -S PREROUTING | grep -- '-A PREROUTING -j PORTREDIRECT')"
+  if [ "$RES" == "" ]; then
+    if ! iptables -t nat -A PREROUTING -j PORTREDIRECT 2> /dev/null > /dev/null; then
+      bashc.finalize 1 "could not link chains"
+    fi
+  fi
   echo "1" > /proc/sys/net/ipv4/ip_forward
 }
 
