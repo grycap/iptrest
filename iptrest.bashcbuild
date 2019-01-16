@@ -10,5 +10,6 @@ DEPENDS="bash, python, python-bottle, iptables, coreutils, sed"
 # REQUIRES if for RPM packages
 REQUIRES="bash coreutils iptables sed python"
 
-/usr/bin;iptrest:iptrestd:iptrestdaemon
+/usr/bin;iptrestd:iptrestdaemon
 /lib/systemd/system;iptrestd.service
+/usr/bin/;iptrest;bashc -o $SOURCEFOLDER/$FILEPATH -cCSR $SOURCEFOLDER/${FILEPATH}.bashc;chmod +x $SOURCEFOLDER/$FILEPATH

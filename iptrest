@@ -1,7 +1,5 @@
 #!/bin/bash
 _MUTED_EXPRESSIONS=()
-
-
 function p_errfile() {
   local i
   local E
@@ -11,7 +9,6 @@ function p_errfile() {
       return 0
     fi
   done
-
   if [ "$LOGFILE" == "" ]; then
     echo "$@" >&2
   else
@@ -21,18 +18,14 @@ function p_errfile() {
     fi
   fi
 }
-
 function p_error() {
   local O_STR="[ERROR] $LOGGER $(date +%Y.%m.%d-%X) $@"
   p_errfile "$O_STR"
 }
-
 function p_warning() {
   local O_STR="[WARNING] $LOGGER $(date +%Y.%m.%d-%X) $@"
   p_errfile "$O_STR"
 }
-
-
 function p_out() {
   if [ "$QUIET" != "true" ]; then
     #while read; do
@@ -40,7 +33,6 @@ function p_out() {
     #done <<< "$@"
   fi
 }
-
 function p_debug() {
   local L
   if [ "$DEBUG" == "true" ]; then
@@ -51,12 +43,7 @@ function p_debug() {
     #done <<< "$@"
   fi
 }
-
-
 _OLD_LOGGER=
-
-
-
 function bashc.finalize() {
   # Finalizes the execution of the this script and shows an error (if provided)
   local ERR=$1
@@ -66,13 +53,11 @@ function bashc.finalize() {
   [ "$COMMENT" != "" ] && p_error "$COMMENT"
   exit $ERR
 }
-
 _BASHC_current_param_id=-1
 _BASHC_COMMANDLINE_ARRAY=( )
 function bashc.parameters_start() {
   _BASHC_current_param_id=-1
 }
-
 function bashc.parameters_next() {
   _BASHC_current_param_id=$((_BASHC_current_param_id+1))
   if ((_BASHC_current_param_id<${#_BASHC_COMMANDLINE_ARRAY[@]})); then
@@ -80,12 +65,9 @@ function bashc.parameters_next() {
   fi
   return 1
 }
-
-
 function bashc.parameters_current() {
   printf "%s" "${_BASHC_COMMANDLINE_ARRAY[$_BASHC_current_param_id]}"
 }
-
 function bashc.parameter_parse_commandline() {
   local n=0
   local f
@@ -103,25 +85,15 @@ function bashc.parameter_parse_commandline() {
   done
   return $n
 }
-
-
-
-
-
-
-
-
-
-
-
-
+function bashc.dump_list() {
+  bashc.dump_in_lines "$@"
+}
 function bashc.is_unsigned() {
   if [[ "$1" =~ ^[0-9]+$ ]]; then
     return 0
   fi
   return 1
 }
-
 function bashc.is_ip() {
   if [[ "$1" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
     while read -d "." F; do
@@ -133,12 +105,19 @@ function bashc.is_ip() {
   fi
   return 1
 }
-
-
-
-
-
-
+function bashc.dump_in_lines() {
+  # Function that dumps (in the debug messages) a set of parameters, putting each of them in one numbered line.
+  #  It is of special interest to dump arrays
+  #  * this is a generalized version of bashc.dump_list
+  # Usage:
+  #  bashc.dump_in_lines "${ARR[@]}"
+  local n=0
+  while [ $# -gt 0 ]; do
+    p_debug "[$n]: $1"
+    shift
+    n=$((n+1))
+  done
+}
 function make_chain() {
   if ! sudo iptables -t nat -L PORTREDIRECT 2> /dev/null > /dev/null; then
     if ! sudo iptables -t nat -N PORTREDIRECT 2> /dev/null > /dev/null; then
@@ -151,20 +130,23 @@ function make_chain() {
       bashc.finalize 1 "could not set up masquerading"
     fi
   fi
+  RES="$(iptables -t nat -S PREROUTING | grep -- '-A PREROUTING -j PORTREDIRECT')"
+  if [ "$RES" == "" ]; then
+    if ! iptables -t nat -A PREROUTING -j PORTREDIRECT 2> /dev/null > /dev/null; then
+      bashc.finalize 1 "could not link chains"
+    fi
+  fi
   echo "1" > /proc/sys/net/ipv4/ip_forward
 }
-
 function show_rule() {
   local JSON_OUTPUT=false
   if [ "$1" == "-j" ]; then
     JSON_OUTPUT=true
     shift
   fi
-
   local S_PORT="$1"
   local D_IP="$2"
   local D_PORT="$3"
-
   if [ "$JSON_OUTPUT" == "true" ]; then
     p_out "$(cat << EOT
 {"s_port" : "$S_PORT", "ip": "$D_IP", "d_port" : "$D_PORT" }
@@ -174,16 +156,13 @@ EOT
     p_out "$S_PORT=>$D_IP:$D_PORT"
   fi
 }
-
 function p_dump_rules() {
   local JSON_OUTPUT
   if [ "$1" == "-j" ]; then
     shift
     JSON_OUTPUT=true
   fi
-  
   local RESULT="$1"
-
   if [ "$JSON_OUTPUT" == "true" ]; then
     p_out "$(cat << EOT
 $(
@@ -221,7 +200,6 @@ EOT
 )"
   fi
 }
-
 function _getrules() {
   local RULES="$(sudo iptables -t nat -L PORTREDIRECT -n | tail -n +3)"
   while read L; do
@@ -241,37 +219,29 @@ function _getrules() {
     fi
   done <<< "$RULES"  
 }
-
 function _queryrules() {
   if [ "$S_PORT" != "" ] && ! bashc.is_unsigned "$S_PORT"; then
     bashc.finalize 1 "missing source port"
   fi
-
   if [ "$D_PORT" != "" ] && ! bashc.is_unsigned "$D_PORT"; then
     bashc.finalize 1 "$D_PORT is not a valid port"
   fi
-
   if [ "$D_IP" != "" ] && ! bashc.is_ip "$D_IP"; then
     bashc.finalize 1 "$D_IP is not a valid IP address"
   fi
-
   local RULES="$(_getrules | sort -n -t'=')"
   if [ "$S_PORT" == "" ]; then
     S_PORT='[0-9]\{1,5\}'
   fi
-
   if [ "$D_IP" == "" ]; then
     D_IP='[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}'
   fi
-
   if [ "$D_PORT" == "" ]; then
     D_PORT='[0-9]\{1,5\}'
   fi
-
   local RESULT="$(echo "$RULES" | grep "^${S_PORT};${D_IP};${D_PORT}\$")"
   echo "$RESULT"
 }
-
 function del() {
   if [ "$D_IP" == "0.0.0.0" ]; then
     D_IP=
@@ -282,19 +252,14 @@ function del() {
   if [ "$S_PORT" == "0" ]; then
     S_PORT=
   fi
-
   local RULES="$(_queryrules)"
-
   p_debug "existing rules:
 $RULES"
-
   local S_PORT D_PORT D_IP R
   local RESULT
   while read L; do
     [ "$L" == "" ] && continue
-
     IFS=';' read S_PORT D_IP D_PORT <<< "$L"
-
     if [ "$S_PORT" != "" -a "$D_PORT" != "" -a "$D_IP" != "" ]; then
       if [ "$NOOP" == "true" ]; then
         p_out "iptables -t nat -D PORTREDIRECT -p tcp -m tcp --dport $S_PORT -j DNAT --to-destination $D_IP:$D_PORT"
@@ -308,7 +273,6 @@ $RULES"
       p_warning "ignoring malformed rule $L"
     fi
   done <<< "$RULES"
-
   if [ "$SHOWRESULT" == "true" ]; then
     if [ "$JSON_OUTPUT" == "true" ]; then
       p_dump_rules -j "$RULES"
@@ -317,20 +281,16 @@ $RULES"
     fi
   fi
 }
-
 function add() {
   if [ "$S_PORT" == "0" ]; then
     S_PORT=
   fi
-
   if [ "$D_IP" == "" ]; then
     bashc.finalize 1 "missing destination ip address"
   fi
-
   if [ "$D_PORT" == "" ]; then
     bashc.finalize 1 "missing destination port"
   fi
-
   local RULES="$(_getrules | sort -n -t';')"
   p_debug "existing rules:
 $RULES"
@@ -350,12 +310,10 @@ $RULES"
     done <<< "$RULES"
     S_PORT=$CURRENT
   fi
-
   local EXISTINGRULE="$(echo "$RULES" | grep "^${S_PORT};")"
   if [ "$EXISTINGRULE" != "" ]; then
     bashc.finalize 1 "port $S_PORT already redirected ($EXISTINGRULE)"
   fi
-
   if [ "$NOOP" == "true" ]; then
     p_out "iptables -t nat -A PORTREDIRECT -p tcp -m tcp --dport $S_PORT -j DNAT --to-destination $D_IP:$D_PORT"
   else
@@ -364,7 +322,6 @@ $RULES"
       bashc.finalize 1 "could not create rule $(show_rule "$S_PORT" "$D_IP" "$D_PORT")"
     fi
   fi
-
   if [ "$SHOWRESULT" == "true" ]; then
     if [ "$JSON_OUTPUT" == "true" ]; then
       p_dump_rules -j "${S_PORT};${D_IP};${D_PORT}"
@@ -374,24 +331,19 @@ $RULES"
   fi
   return 0;
 }
-
 function listrules() {
   local RESULT="$(_queryrules)"
-
   if [ "$JSON_OUTPUT" == "true" ]; then
     p_dump_rules -j "$RESULT"
   else
     p_dump_rules "$RESULT"
   fi
-
   if [ "$RESULT" != "" ]; then
     return 1
   fi
   return 0
 }
-
 make_chain
-
 OPERATION=
 BASE=1024
 bashc.parameter_parse_commandline "$@"
@@ -424,7 +376,6 @@ while bashc.parameters_next; do
         bashc.finalize 1 "invalid parameter $PARAM";;
   esac
 done
-
 case "$OPERATION" in
   add) 
     add;;
